@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tigrigna-aligner"
+version = "1.0.0"
+description = "Forced Tigrinya phrase aligner for Remotion timed-script.json"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "faster-whisper>=1.1.0",
+  "numpy>=1.24.0",
+  "soundfile>=0.12.1",
+  "librosa>=0.10.1",
+  "rapidfuzz>=3.6.0",
+  "tqdm>=4.66.0",
+  "python-docx>=1.1.0",
+  "pypdf>=4.0.0",
+  "striprtf>=0.0.26",
+]
+
+[project.scripts]
+tigrigna-aligner = "tigrigna_aligner.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["tigrigna_aligner*"]
