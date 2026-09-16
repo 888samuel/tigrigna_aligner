@@ -1,0 +1,105 @@
+name: Align Tigrinya VO
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_id:
+        description: video_id written into timed-script.json
+        required: true
+        default: episode
+      audio_file:
+        description: Path to audio/video under the repo (relative)
+        required: true
+        default: inputs/output.mp3
+      script_file:
+        description: Path to script under the repo (txt/docx/pdf/…)
+        required: true
+        default: inputs/script.txt
+      model:
+        description: Whisper model size (tiny / base / small)
+        required: true
+        default: base
+      vad_only:
+        description: Skip Whisper and use VAD/silence only (true/false)
+        required: true
+        default: "false"
+      language:
+        description: Whisper language hint (am recommended; empty = auto)
+        required: false
+        default: am
+
+jobs:
+  align:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify inputs exist
+        run: |
+          set -euo pipefail
+          AUDIO="${{ inputs.audio_file }}"
+          SCRIPT="${{ inputs.script_file }}"
+          if [ ! -f "$AUDIO" ]; then
+            echo "ERROR: audio not found: $AUDIO"
+            echo "Commit your dry VO under inputs/ (or change audio_file)."
+            ls -la inputs || true
+            exit 1
+          fi
+          if [ ! -f "$SCRIPT" ]; then
+            echo "ERROR: script not found: $SCRIPT"
+            echo "Commit your script under inputs/ (or change script_file)."
+            ls -la inputs || true
+            exit 1
+          fi
+          echo "Audio:  $AUDIO ($(du -h "$AUDIO" | cut -f1))"
+          echo "Script: $SCRIPT"
+
+      - name: Run aligner
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          ARGS=(
+            --audio "${{ inputs.audio_file }}"
+            --script "${{ inputs.script_file }}"
+            --output output/timed-script.json
+            --video-id "${{ inputs.video_id }}"
+            --model "${{ inputs.model }}"
+            --device cpu
+            --compute-type int8
+          )
+          LANG_HINT="${{ inputs.language }}"
+          if [ -n "$LANG_HINT" ]; then
+            ARGS+=(--language "$LANG_HINT")
+          else
+            ARGS+=(--language "")
+          fi
+          if [ "${{ inputs.vad_only }}" = "true" ]; then
+            ARGS+=(--vad-only)
+          fi
+          python align.py "${ARGS[@]}"
+          echo "---- timed-script preview ----"
+          python -c "import json; d=json.load(open('output/timed-script.json',encoding='utf-8')); print('phrases', len(d.get('segments',[]))); print('needs_review', d.get('stats',{}).get('needs_review_count')); print('mean_confidence', d.get('stats',{}).get('mean_confidence'))"
+
+      - name: Upload timed-script artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: timed-script-${{ inputs.video_id }}
+          path: output/timed-script.json
+          if-no-files-found: error

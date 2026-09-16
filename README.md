@@ -80,6 +80,15 @@ Rules for accuracy:
 - Prefer 3–12 words per line/paragraph
 - Legacy `.doc` is not supported — save as `.docx` or `.pdf`
 
+## Run on GitHub Actions
+
+1. Put dry VO + script in `inputs/` (defaults: `inputs/output.mp3`, `inputs/script.txt`)
+2. Commit and push
+3. GitHub → **Actions** → **Align Tigrinya VO** → **Run workflow**
+4. Download the `timed-script-…` artifact
+
+Workflow file: `.github/workflows/align.yml`
+
 ## Run
 
 ```bash
