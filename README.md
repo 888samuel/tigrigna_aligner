@@ -82,10 +82,12 @@ Rules for accuracy:
 
 ## Run on GitHub Actions
 
-1. Put dry VO + script in `inputs/` (defaults: `inputs/output.mp3`, `inputs/script.txt`)
+1. Put dry VO + script in `inputs/` (defaults: `inputs/output.mp3`, `inputs/script.docx`)
 2. Commit and push
 3. GitHub → **Actions** → **Align Tigrinya VO** → **Run workflow**
 4. Download the `timed-script-…` artifact
+
+Word scripts work as-is — use `inputs/script.docx` (one phrase per paragraph).
 
 Workflow file: `.github/workflows/align.yml`
 

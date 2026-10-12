@@ -12,9 +12,9 @@ on:
         required: true
         default: inputs/output.mp3
       script_file:
-        description: Path to script under the repo (txt/docx/pdf/…)
+        description: Path to script under the repo (docx/txt/pdf/…)
         required: true
-        default: inputs/script.txt
+        default: inputs/script.docx
       model:
         description: Whisper model size (tiny / base / small)
         required: true
