@@ -27,8 +27,14 @@ def score_segments(
     for a in aligned:
         # Convert fuzzy 0-100 match into 0-1 confidence, with method priors
         base = max(0.0, min(100.0, a.match_score)) / 100.0
-        if "whisper_force_match" in a.method:
+        if "mms_ctc" in a.method:
+            conf = 0.88
+        elif "pause_dp" in a.method:
+            conf = 0.85
+        elif "whisper_force_match" in a.method:
             conf = 0.55 + 0.45 * base
+        elif "hierarchy" in a.method:
+            conf = 0.82
         elif "vad_1to1" in a.method:
             conf = 0.75
         elif "speech_axis" in a.method:

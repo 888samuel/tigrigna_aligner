@@ -93,14 +93,20 @@ Workflow file: `.github/workflows/align.yml`
 
 ## Run
 
+Best accuracy (install MMS first):
+
 ```bash
-python align.py --audio path\to\output.mp3 --script path\to\script.txt --output output\timed-script.json --video-id my_video
+pip install -r requirements-mms.txt
+python align.py --audio inputs\output.mp3 --script inputs\script.docx --output output\timed-script.json --engine auto
 ```
 
-Fast VAD-only mode (no Whisper download):
+`--engine auto` uses **MMS CTC forced alignment** for Tigrinya (`tir`) when installed.
+If MMS is missing, it falls back to pause-aware hierarchy alignment.
+
+Fast mode (no MMS download):
 
 ```bash
-python align.py --audio path\to\output.mp3 --script path\to\script.txt --vad-only
+python align.py --audio inputs\output.mp3 --script inputs\script.docx --engine hierarchy
 ```
 
 Useful flags:

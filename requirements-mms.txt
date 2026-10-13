@@ -1,0 +1,10 @@
+# True Tigrinya forced alignment (MMS CTC via transformers)
+# Works on Windows without Visual C++ build tools.
+#
+#   pip install -r requirements-mms.txt
+#
+torch>=2.1.0
+transformers>=4.39.0
+accelerate>=0.27.0
+uroman>=1.3.0
+Unidecode>=1.3.0
