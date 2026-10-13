@@ -31,6 +31,8 @@ def score_segments(
             conf = 0.55 + 0.45 * base
         elif "vad_1to1" in a.method:
             conf = 0.75
+        elif "speech_axis" in a.method:
+            conf = 0.78
         elif "vad_merged" in a.method or "blend" in a.method:
             conf = 0.55 + 0.25 * base
         elif "proportional" in a.method:

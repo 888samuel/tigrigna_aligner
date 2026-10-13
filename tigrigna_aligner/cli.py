@@ -59,9 +59,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--silence-db",
-        type=float,
-        default=-40.0,
-        help="Silence threshold in dB for boundary snapping (default: -40)",
+        default="auto",
+        help="Silence threshold in dB, or 'auto' to estimate from audio (default: auto)",
     )
     p.add_argument(
         "--pad-sec",
@@ -93,12 +92,19 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     language = args.language.strip() or None
 
+    silence_raw = str(args.silence_db).strip().lower()
+    silence_db: float | None
+    if silence_raw in {"", "auto", "none"}:
+        silence_db = None
+    else:
+        silence_db = float(silence_raw)
+
     config = AlignConfig(
         model_size=args.model,
         device=args.device,
         compute_type=args.compute_type,
         language=language,
-        silence_db=args.silence_db,
+        silence_db=silence_db,
         pad_sec=args.pad_sec,
         review_threshold=args.review_threshold,
         skip_whisper=args.vad_only,

@@ -138,15 +138,30 @@ def force_match_phrases(
     return _enforce_monotonic(aligned, audio_duration)
 
 
+def phrase_weight(phrase: Phrase) -> float:
+    """Speaking-time weight: non-space chars, with a floor so tiny lines still get time."""
+    chars = len(phrase.normalized.replace(" ", ""))
+    words = max(1, len(phrase.normalized.split()))
+    # Latin tokens (e.g. English titles) often take longer per character
+    latin = sum(1 for ch in phrase.text if ("A" <= ch <= "Z") or ("a" <= ch <= "z"))
+    latin_boost = 1.0 + (0.35 * latin / max(1, chars))
+    return max(4.0, float(chars) * latin_boost, float(words) * 2.5)
+
+
 def align_phrases_to_regions(
     phrases: list[Phrase],
     regions: list[tuple[float, float]],
     audio_duration: float,
 ) -> list[AlignedPhrase]:
-    """Map phrases onto VAD speech regions (1:1, merge, or split by char length)."""
+    """Map phrases onto speech using a speech-time axis (not per-region phrase quotas)."""
+    if not phrases:
+        return []
     if not regions:
-        return proportional_align(phrases, 0.0, audio_duration, method="proportional_no_vad")
+        return proportional_align(
+            phrases, 0.0, audio_duration, method="proportional_no_vad"
+        )
 
+    # Exact region==phrase count is rare but ideal when pauses match lines.
     if len(regions) == len(phrases):
         return [
             AlignedPhrase(
@@ -159,61 +174,80 @@ def align_phrases_to_regions(
             for p, (s, e) in zip(phrases, regions)
         ]
 
-    if len(regions) > len(phrases):
-        merged = _merge_regions(regions, len(phrases))
-        return [
-            AlignedPhrase(
-                phrase=p,
-                start_sec=float(s),
-                end_sec=float(e),
-                match_score=70.0,
-                method="vad_merged",
-            )
-            for p, (s, e) in zip(phrases, merged)
-        ]
+    # Always distribute by speaking weight on the speech timeline.
+    # (Old logic gave each VAD region equal phrase *counts*, which broke
+    # continuous narration where one region spanned most of the audio.)
+    return speech_axis_align(phrases, regions, audio_duration)
 
-    # Fewer regions than phrases: split regions by character weight
-    weights = [max(1, len(p.normalized.replace(" ", ""))) for p in phrases]
+
+def speech_axis_align(
+    phrases: list[Phrase],
+    regions: list[tuple[float, float]],
+    audio_duration: float,
+) -> list[AlignedPhrase]:
+    """Place phrases along concatenated speech time by character/speaking weight.
+
+    This avoids the old bug where each VAD region got the same phrase *count*,
+    which crushed early phrases into tiny gaps and dumped the rest wrongly.
+    """
+    if not phrases:
+        return []
+    if not regions:
+        return proportional_align(
+            phrases, 0.0, audio_duration, method="proportional_no_vad"
+        )
+
+    # pieces: (wall_start, wall_end, speech_start, speech_end)
+    pieces: list[tuple[float, float, float, float]] = []
+    speech_cursor = 0.0
+    for wall_s, wall_e in regions:
+        dur = max(0.0, wall_e - wall_s)
+        if dur <= 0:
+            continue
+        pieces.append((wall_s, wall_e, speech_cursor, speech_cursor + dur))
+        speech_cursor += dur
+    total_speech = speech_cursor
+    if total_speech <= 0.05 or not pieces:
+        return proportional_align(
+            phrases, 0.0, audio_duration, method="proportional_empty_speech"
+        )
+
+    weights = [phrase_weight(p) for p in phrases]
+    total_w = sum(weights) or 1.0
+
+    def speech_to_wall(speech_t: float) -> float:
+        t = min(max(0.0, speech_t), total_speech)
+        for wall_s, wall_e, sp_s, sp_e in pieces:
+            if t <= sp_e or sp_e >= total_speech:
+                local = sp_e - sp_s
+                if local <= 0:
+                    return wall_s
+                frac = (t - sp_s) / local
+                return wall_s + frac * (wall_e - wall_s)
+        return pieces[-1][1]
+
     aligned: list[AlignedPhrase] = []
-    phrase_idx = 0
-    for ri, (rs, re) in enumerate(regions):
-        remaining_regions = len(regions) - ri
-        remaining_phrases = len(phrases) - phrase_idx
-        take = remaining_phrases // remaining_regions
-        if ri == len(regions) - 1:
-            take = remaining_phrases
-        take = max(1, take)
-        group = phrases[phrase_idx : phrase_idx + take]
-        group_w = weights[phrase_idx : phrase_idx + take]
-        span = re - rs
-        cursor = rs
-        gw = sum(group_w) or 1
-        for gp, w in zip(group, group_w):
-            dur = span * (w / gw)
-            end = cursor + dur
-            aligned.append(
-                AlignedPhrase(
-                    phrase=gp,
-                    start_sec=float(cursor),
-                    end_sec=float(end),
-                    match_score=60.0,
-                    method="vad_split",
-                )
-            )
-            cursor = end
-        phrase_idx += take
-
-    # Safety if math left phrases
-    if phrase_idx < len(phrases):
-        last_end = aligned[-1].end_sec if aligned else 0.0
-        aligned.extend(
-            proportional_align(
-                phrases[phrase_idx:],
-                last_end,
-                audio_duration,
-                method="proportional_vad_tail",
+    cursor = 0.0
+    for i, (phrase, weight) in enumerate(zip(phrases, weights)):
+        share = total_speech * (weight / total_w)
+        end = total_speech if i == len(phrases) - 1 else cursor + share
+        # Keep a tiny minimum speech duration so phrases don't collapse
+        min_dur = min(0.18, total_speech / max(1, len(phrases) * 2))
+        if end < cursor + min_dur and i < len(phrases) - 1:
+            end = cursor + min_dur
+        wall_start = speech_to_wall(cursor)
+        wall_end = speech_to_wall(end)
+        aligned.append(
+            AlignedPhrase(
+                phrase=phrase,
+                start_sec=float(wall_start),
+                end_sec=float(max(wall_end, wall_start + 0.05)),
+                match_score=72.0,
+                method="speech_axis",
             )
         )
+        cursor = end
+
     return _enforce_monotonic(aligned, audio_duration)
 
 
@@ -226,8 +260,8 @@ def proportional_align(
 ) -> list[AlignedPhrase]:
     if not phrases:
         return []
-    weights = [max(1, len(p.normalized.replace(" ", ""))) for p in phrases]
-    total = sum(weights)
+    weights = [phrase_weight(p) for p in phrases]
+    total = sum(weights) or 1.0
     span = max(0.05, end_sec - start_sec)
     cursor = start_sec
     out: list[AlignedPhrase] = []

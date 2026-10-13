@@ -179,18 +179,48 @@ def rms_envelope(
     return times, rms
 
 
+def estimate_silence_db(
+    samples: np.ndarray,
+    sample_rate: int,
+    *,
+    frame_ms: float = 20.0,
+    fallback: float = -35.0,
+) -> float:
+    """Pick a silence threshold from the audio energy distribution.
+
+    Fixed -40 dB often merges a whole narration into one speech blob when
+    breaths never drop that low. Adaptive threshold finds relative pauses.
+    """
+    _, rms = rms_envelope(samples, sample_rate, frame_ms=frame_ms)
+    if rms.size == 0:
+        return fallback
+    eps = 1e-10
+    rms_db = 20.0 * np.log10(np.maximum(rms, eps))
+    p20 = float(np.percentile(rms_db, 20))
+    p50 = float(np.percentile(rms_db, 50))
+    p80 = float(np.percentile(rms_db, 80))
+    # Sit between quiet floor and typical speech level
+    thresh = p20 + 0.45 * (p50 - p20)
+    # If dynamic range is small, step down from speech peak
+    if (p80 - p20) < 8.0:
+        thresh = p80 - 10.0
+    return float(max(-50.0, min(-22.0, thresh if np.isfinite(thresh) else fallback)))
+
+
 def detect_silence_mask(
     samples: np.ndarray,
     sample_rate: int,
     *,
-    silence_db: float = -40.0,
+    silence_db: float | None = -40.0,
     frame_ms: float = 20.0,
-    min_silence_sec: float = 0.18,
+    min_silence_sec: float = 0.12,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return (times, rms_db, is_silence) at frame resolution."""
     times, rms = rms_envelope(samples, sample_rate, frame_ms=frame_ms)
     eps = 1e-10
     rms_db = 20.0 * np.log10(np.maximum(rms, eps))
+    if silence_db is None:
+        silence_db = estimate_silence_db(samples, sample_rate, frame_ms=frame_ms)
     is_silence = rms_db < silence_db
 
     min_frames = max(1, int(min_silence_sec * 1000.0 / frame_ms))
@@ -202,12 +232,14 @@ def speech_regions(
     samples: np.ndarray,
     sample_rate: int,
     *,
-    silence_db: float = -40.0,
+    silence_db: float | None = None,
     min_speech_sec: float = 0.12,
     pad_sec: float = 0.04,
 ) -> list[tuple[float, float]]:
+    if silence_db is None:
+        silence_db = estimate_silence_db(samples, sample_rate)
     times, _, is_silence = detect_silence_mask(
-        samples, sample_rate, silence_db=silence_db
+        samples, sample_rate, silence_db=silence_db, min_silence_sec=0.12
     )
     if times.size == 0:
         return [(0.0, len(samples) / sample_rate)]
