@@ -11,7 +11,7 @@ from .audio import (
     speech_regions,
 )
 from .confidence import ScoredSegment, score_segments
-from .export import to_timed_script, write_timed_script
+from .export import srt_path_for, to_timed_script, write_srt, write_timed_script
 from .hierarchy import hierarchical_speech_align
 from .match import blend_alignments, force_match_phrases
 from .mms_engine import align_with_mms, mms_available
@@ -38,6 +38,8 @@ class AlignConfig:
     video_id: str = "episode"
     include_debug: bool = True
     mms_batch_size: int = 1
+    write_srt_file: bool = True
+    srt_path: str | None = None
 
 
 def align_audio_to_script(
@@ -194,4 +196,7 @@ def run_alignment(
         meta=meta,
         include_debug=config.include_debug,
     )
-    return write_timed_script(output_path, payload)
+    json_path = write_timed_script(output_path, payload)
+    if config.write_srt_file:
+        write_srt(srt_path_for(json_path, config.srt_path), payload["segments"])
+    return json_path

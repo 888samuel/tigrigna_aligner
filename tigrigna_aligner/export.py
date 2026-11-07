@@ -59,3 +59,51 @@ def write_timed_script(path: str | Path, payload: dict[str, Any]) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def format_srt_timestamp(seconds: float) -> str:
+    """SRT timestamp: HH:MM:SS,mmm"""
+    if seconds < 0:
+        seconds = 0.0
+    total_ms = int(round(seconds * 1000.0))
+    hours, rem = divmod(total_ms, 3_600_000)
+    minutes, rem = divmod(rem, 60_000)
+    secs, millis = divmod(rem, 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+
+def segments_to_srt(segments: list[dict[str, Any]]) -> str:
+    """One cue per phrase, using start_sec/end_sec/text."""
+    cues: list[str] = []
+    index = 1
+    prev_end = 0.0
+    for seg in segments:
+        text = str(seg.get("text") or "").strip()
+        if not text:
+            continue
+        start = float(seg["start_sec"])
+        end = float(seg["end_sec"])
+        start = max(start, prev_end)
+        if end <= start:
+            end = start + 0.12
+        cues.append(
+            f"{index}\n{format_srt_timestamp(start)} --> {format_srt_timestamp(end)}\n{text}\n"
+        )
+        prev_end = end
+        index += 1
+    return "\n".join(cues) + ("\n" if cues else "")
+
+
+def write_srt(path: str | Path, segments: list[dict[str, Any]]) -> Path:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # utf-8-sig so Windows players (VLC, Premiere) read Ge'ez correctly
+    path.write_text(segments_to_srt(segments), encoding="utf-8-sig")
+    return path
+
+
+def srt_path_for(json_path: str | Path, override: str | Path | None = None) -> Path:
+    if override:
+        return Path(override)
+    json_path = Path(json_path)
+    return json_path.with_suffix(".srt")

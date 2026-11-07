@@ -38,6 +38,16 @@ def build_parser() -> argparse.ArgumentParser:
         default="output/timed-script.json",
         help="Output JSON path (default: output/timed-script.json)",
     )
+    p.add_argument(
+        "--srt",
+        default=None,
+        help="SRT cue file path (default: same name as --output with .srt)",
+    )
+    p.add_argument(
+        "--no-srt",
+        action="store_true",
+        help="Do not write an SRT file",
+    )
     p.add_argument("--video-id", default="episode", help="video_id field in JSON")
     p.add_argument(
         "--engine",
@@ -134,6 +144,8 @@ def main(argv: list[str] | None = None) -> int:
         skip_whisper=not args.with_whisper and engine != "whisper",
         video_id=args.video_id,
         include_debug=not args.no_debug,
+        write_srt_file=not args.no_srt,
+        srt_path=args.srt,
     )
 
     audio = Path(args.audio)
@@ -155,6 +167,11 @@ def main(argv: list[str] | None = None) -> int:
 
     out = run_alignment(audio, script, output, config=config)
     print(f"Wrote {out.resolve()}")
+    if config.write_srt_file:
+        from .export import srt_path_for
+
+        srt = srt_path_for(out, config.srt_path)
+        print(f"Wrote {srt.resolve()}")
     return 0
 
 

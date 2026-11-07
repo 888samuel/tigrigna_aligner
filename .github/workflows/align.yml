@@ -86,9 +86,11 @@ jobs:
           echo "---- timed-script preview ----"
           python -c "import json; d=json.load(open('output/timed-script.json',encoding='utf-8')); print('mode', d.get('meta',{}).get('mode')); print('phrases', len(d.get('segments',[]))); print('needs_review', d.get('stats',{}).get('needs_review_count')); print('mean_confidence', d.get('stats',{}).get('mean_confidence')); print('mms', d.get('meta',{}).get('mms'))"
 
-      - name: Upload timed-script artifact
+      - name: Upload timed-script and SRT artifacts
         uses: actions/upload-artifact@v4
         with:
           name: timed-script-${{ inputs.video_id }}
-          path: output/timed-script.json
+          path: |
+            output/timed-script.json
+            output/timed-script.srt
           if-no-files-found: error

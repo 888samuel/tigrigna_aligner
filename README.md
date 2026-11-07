@@ -102,6 +102,8 @@ python align.py --audio inputs\output.mp3 --script inputs\script.docx --output o
 
 This locks your **exact script phrases** onto the voiceover with Meta MMS (`tir`), then lightly trims silence and snaps boundaries.
 
+It also writes `output/timed-script.srt` — one subtitle cue per script line with accurate start/end times.
+
 `--engine auto` uses MMS when torch/transformers are installed, otherwise pause-aware hierarchy.
 
 Fast approximate mode (no MMS):
