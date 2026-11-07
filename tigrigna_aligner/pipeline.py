@@ -16,6 +16,7 @@ from .hierarchy import hierarchical_speech_align
 from .match import blend_alignments, force_match_phrases
 from .mms_engine import align_with_mms, mms_available
 from .pause_dp import refine_with_pause_dp
+from .refine import trim_leading_trailing_silence
 from .script import load_script
 from .snap import snap_to_silence
 from .whisper_engine import transcribe_words
@@ -29,14 +30,14 @@ class AlignConfig:
     language: str | None = "am"
     mms_language: str = "tir"
     silence_db: float | None = None
-    pad_sec: float = 0.06
+    pad_sec: float = 0.04
     review_threshold: float = 65.0
     # auto | mms | hierarchy | whisper
     engine: str = "auto"
-    skip_whisper: bool = True  # Whisper is weak for Tigrinya; off by default
+    skip_whisper: bool = True
     video_id: str = "episode"
     include_debug: bool = True
-    mms_batch_size: int = 2
+    mms_batch_size: int = 1
 
 
 def align_audio_to_script(
@@ -50,6 +51,9 @@ def align_audio_to_script(
     script_path = Path(script_path)
 
     phrases = load_script(script_path)
+    if not phrases:
+        raise ValueError("Script produced zero phrases")
+
     audio = load_audio(audio_path)
     model_audio = ensure_wav_for_model(audio)
 
@@ -89,9 +93,9 @@ def align_audio_to_script(
 
     engine = (config.engine or "auto").lower().strip()
     aligned = hierarchy_aligned
-    meta["mode"] = "hierarchy+pause_dp+silence_snap"
+    used_mms = False
+    meta["mode"] = "hierarchy+pause_dp"
 
-    # Prefer true MMS CTC forced alignment for Tigrinya when available.
     try_mms = engine in {"auto", "mms"}
     if try_mms and mms_available():
         try:
@@ -104,23 +108,25 @@ def align_audio_to_script(
                 batch_size=config.mms_batch_size,
             )
             aligned = mms.phrase_aligned
-            meta["mode"] = "mms_ctc+silence_snap"
+            used_mms = True
+            meta["mode"] = "mms_ctc"
             meta["mms"] = {
                 "model": mms.model_name,
                 "language": config.mms_language,
                 "word_count": len(mms.words),
+                "mean_token_score": round(mms.mean_token_score, 4),
             }
         except Exception as exc:
             aligned = hierarchy_aligned
-            meta["mode"] = "hierarchy+pause_dp+silence_snap"
-            meta["mms"] = {"error": str(exc)[:400]}
+            used_mms = False
+            meta["mode"] = "hierarchy+pause_dp"
+            meta["mms"] = {"error": str(exc)[:500]}
     elif engine == "mms":
         meta["mms"] = {
-            "error": "ctc-forced-aligner/torch not installed. "
+            "error": "torch/transformers not installed. "
             "pip install -r requirements-mms.txt"
         }
 
-    # Optional Whisper refine (usually weak for Tigrinya)
     if (not config.skip_whisper) or engine == "whisper":
         try:
             prompt = "\n".join(p.text for p in phrases)
@@ -146,19 +152,28 @@ def align_audio_to_script(
                 "mean_match_score": round(mean_whisper, 1),
                 "word_count": len(whisper.words),
             }
-            if mean_whisper >= 62.0:
+            # Never overwrite strong MMS with weak Whisper
+            if (not used_mms) and mean_whisper >= 62.0:
                 aligned = blend_alignments(whisper_aligned, aligned)
                 meta["mode"] = f"{meta['mode']}+whisper_blend"
         except Exception as exc:
             meta["whisper"] = {"error": str(exc)[:300]}
 
+    aligned = trim_leading_trailing_silence(
+        aligned,
+        audio,
+        silence_db=float(silence_db),
+    )
     aligned = snap_to_silence(
         aligned,
         audio,
         pad_sec=config.pad_sec,
-        silence_db=silence_db,
-        search_radius_sec=0.55,
+        silence_db=float(silence_db),
+        search_radius_sec=0.12 if used_mms else 0.45,
+        gentle=used_mms,
     )
+    meta["mode"] = f"{meta['mode']}+trim+silence_snap"
+
     scored = score_segments(aligned, review_threshold=config.review_threshold)
     return scored, meta
 

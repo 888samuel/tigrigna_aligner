@@ -93,17 +93,18 @@ Workflow file: `.github/workflows/align.yml`
 
 ## Run
 
-Best accuracy (install MMS first):
+Best accuracy — MMS CTC forced alignment (recommended):
 
 ```bash
 pip install -r requirements-mms.txt
-python align.py --audio inputs\output.mp3 --script inputs\script.docx --output output\timed-script.json --engine auto
+python align.py --audio inputs\output.mp3 --script inputs\script.docx --output output\timed-script.json --engine mms
 ```
 
-`--engine auto` uses **MMS CTC forced alignment** for Tigrinya (`tir`) when installed.
-If MMS is missing, it falls back to pause-aware hierarchy alignment.
+This locks your **exact script phrases** onto the voiceover with Meta MMS (`tir`), then lightly trims silence and snaps boundaries.
 
-Fast mode (no MMS download):
+`--engine auto` uses MMS when torch/transformers are installed, otherwise pause-aware hierarchy.
+
+Fast approximate mode (no MMS):
 
 ```bash
 python align.py --audio inputs\output.mp3 --script inputs\script.docx --engine hierarchy
